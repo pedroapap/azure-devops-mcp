@@ -1,0 +1,33 @@
+name: Create main-on-prem-support branch
+
+on:
+  push:
+    branches:
+      - 'copilot/main-on-prem-support'
+
+jobs:
+  create-branch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create main-on-prem-support from main tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REPO="${{ github.repository }}"
+
+          # Get main's current HEAD SHA
+          MAIN_SHA=$(gh api "repos/${REPO}/git/ref/heads/main" --jq '.object.sha')
+          echo "main HEAD: ${MAIN_SHA}"
+
+          # Create main-on-prem-support if it doesn't already exist
+          if gh api "repos/${REPO}/branches/main-on-prem-support" --silent 2>/dev/null; then
+            echo "Branch main-on-prem-support already exists – nothing to do."
+          else
+            gh api "repos/${REPO}/git/refs" \
+              --method POST \
+              -f ref='refs/heads/main-on-prem-support' \
+              -f sha="${MAIN_SHA}"
+            echo "Created branch main-on-prem-support at ${MAIN_SHA}"
+          fi

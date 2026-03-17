@@ -55,7 +55,7 @@ echo "Fetching $REMOTE_UPSTREAM..."
 git fetch "$REMOTE_UPSTREAM" --prune
 
 # --------------------------------------------------------------------------
-# 4. Resolve the custom branch ref from the remote (does not touch local branch)
+# 4. Resolve refs (does not touch local branches)
 # --------------------------------------------------------------------------
 CUSTOM_REF="$REMOTE_ORIGIN/$BRANCH_CUSTOM"
 if ! git rev-parse --verify "$CUSTOM_REF" &>/dev/null; then
@@ -67,9 +67,11 @@ fi
 UPSTREAM_MAIN="$REMOTE_UPSTREAM/$BRANCH_MAIN"
 
 # --------------------------------------------------------------------------
-# 5. Compute custom commits not yet merged into upstream/main
+# 5. Compute custom commits not yet applied to upstream/main
+#    git cherry compares by patch-ID, so commits already upstreamed
+#    (same content, different SHA) are automatically excluded.
 # --------------------------------------------------------------------------
-COMMITS=$(git rev-list --reverse "${UPSTREAM_MAIN}..${CUSTOM_REF}")
+COMMITS=$(git cherry "$UPSTREAM_MAIN" "$CUSTOM_REF" | awk '/^\+/{print $2}')
 COMMIT_COUNT=0
 if [ -n "$COMMITS" ]; then
   COMMIT_COUNT=$(echo "$COMMITS" | wc -l | tr -d ' ')
@@ -103,17 +105,20 @@ else
       echo "    1. Fix conflict markers in each conflicted file."
       echo "    2. Stage the resolved files:"
       echo "         git add <resolved-file> ..."
-      echo "    3. Continue the cherry-pick:"
+      echo "    3. Continue the cherry-pick sequence:"
       echo "         git cherry-pick --continue"
       echo "       (Repeat for any further conflicting commits.)"
       echo
       echo "  To skip this specific commit instead:"
       echo "         git cherry-pick --skip"
       echo
-      echo "  After all cherry-picks finish, complete the sync:"
+      echo "  After ALL cherry-picks finish, complete the sync:"
       echo "         git checkout $BRANCH_MAIN"
       echo "         git reset --hard $REBUILD_BRANCH"
       echo "         git push $REMOTE_ORIGIN $BRANCH_MAIN --force-with-lease"
+      echo
+      echo "  Tip: enable rerere to auto-replay resolutions next time:"
+      echo "         git config rerere.enabled true"
       echo
       exit 1
     }

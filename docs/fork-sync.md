@@ -2,27 +2,31 @@
 
 This document explains how to maintain this fork of
 [microsoft/azure-devops-mcp](https://github.com/microsoft/azure-devops-mcp)
-and keep it in sync with upstream while preserving fork-specific customizations.
+and keep it current with upstream while preserving fork-specific customizations.
 
 ## Branch Roles
 
 ### `main`
 
-The published branch of this fork. It is **rebuilt automatically** each time you
-run the sync script:
+The **published branch** of this fork. It is **rebuilt** each time you run the
+sync script and must never be edited directly:
 
-- base: `upstream/main` (the Microsoft repository)
-- plus: commits from `main-on-prem-support` cherry-picked on top
+- **base**: `upstream/main` (the Microsoft repository)
+- **plus**: commits from `main-on-prem-support` cherry-picked on top
 
 > **Do not commit fork-specific changes directly to `main`.**
 > They will be overwritten the next time `main` is rebuilt from upstream.
 
 ### `main-on-prem-support`
 
-The durable source of all fork-specific customizations. Every change that must
-survive upstream sync cycles must be committed here. When the sync script runs,
-it cherry-picks all commits from this branch that are not yet in `upstream/main`
-and applies them on top of the latest upstream to produce the new `main`.
+The **durable source** of all fork-specific customizations. Every change that
+must survive upstream sync cycles — application logic, configuration, or
+maintenance tooling — must be committed here.
+
+When the sync script runs, it uses `git cherry` (patch-ID comparison) to
+identify commits from `main-on-prem-support` that have not yet been applied to
+`upstream/main`, then cherry-picks them on top of the latest upstream to produce
+the new `main`.
 
 ## Upstream Remote
 
@@ -33,8 +37,12 @@ git@github.com:microsoft/azure-devops-mcp.git
 ```
 
 The sync script (`scripts/sync-fork.sh`) automatically configures or refreshes
-the `upstream` remote. You do not need to set it up manually; you only need a
-GitHub SSH key available in your environment.
+the `upstream` remote each run. You do not need to set it up manually; you only
+need a GitHub SSH key available in your environment.
+
+> The script does **not** assume any particular local remote configuration, so it
+> is safe to run in a fresh clone or a CI environment where only `origin` is
+> initially defined.
 
 ## Adding Fork-Specific Changes
 
@@ -48,7 +56,7 @@ git commit -m "description of fork-specific change"
 git push origin main-on-prem-support
 ```
 
-After committing, run the sync script to rebuild `main`.
+After pushing, run the sync script to rebuild `main`.
 
 ## Running the Sync Script
 
@@ -62,11 +70,15 @@ The script will:
 1. Verify the working tree is clean.
 2. Configure or refresh the `upstream` remote.
 3. Fetch `origin` and `upstream`.
-4. Create a temporary `main-rebuild` branch from `upstream/main`.
-5. Cherry-pick every commit from `main-on-prem-support` that is not yet in
-   `upstream/main`.
-6. On success: reset `main` to the rebuilt result and push to `origin` with
+4. Verify `origin/main-on-prem-support` exists.
+5. Use `git cherry` to identify commits from `main-on-prem-support` not yet
+   applied to `upstream/main` (patch-ID comparison, not SHA comparison — so
+   commits already upstreamed with a different SHA are automatically skipped).
+6. Create a temporary `main-rebuild` branch from `upstream/main`.
+7. Cherry-pick each identified commit onto `main-rebuild`.
+8. On success: reset `main` to `main-rebuild` and push to `origin` with
    `--force-with-lease`.
+9. Delete the temporary `main-rebuild` branch.
 
 ## Recovering from Conflicts
 
@@ -102,36 +114,36 @@ Git's `rerere` (reuse recorded resolution) feature remembers how you resolved a
 conflict and can re-apply that resolution automatically in future syncs. This is
 especially useful for a fork that is periodically rebased onto upstream.
 
-Enable it for this repository:
+Enable it for this repository only:
 
 ```bash
 git config rerere.enabled true
 ```
 
-Or globally on your machine:
+Or globally on your machine (optional):
 
 ```bash
 git config --global rerere.enabled true
 ```
 
-See the [git-rerere documentation](https://git-scm.com/docs/git-rerere) for
-details. Enabling it is strongly recommended but not required for the sync
-script to work.
+Enabling `rerere` is strongly recommended but optional — the sync script works
+without it. See the
+[git-rerere documentation](https://git-scm.com/docs/git-rerere) for details.
 
 ## One-Time Setup Summary
 
 ```bash
-# Clone your fork (replace with your fork URL)
-git clone git@github.com:<your-user>/azure-devops-mcp.git
+# Clone your fork (replace <your-username> with your GitHub username)
+git clone git@github.com:<your-username>/azure-devops-mcp.git
 cd azure-devops-mcp
 
-# (Optional but recommended) enable rerere
+# (Recommended) enable rerere for this repo
 git config rerere.enabled true
 
-# Add your fork-specific commits to main-on-prem-support
+# Add fork-specific commits to main-on-prem-support
 git checkout main-on-prem-support
 # ... make changes, commit, push ...
 
-# Sync with upstream
+# Sync with upstream and rebuild main
 ./scripts/sync-fork.sh
 ```

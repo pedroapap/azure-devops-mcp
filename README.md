@@ -149,7 +149,7 @@ The Azure DevOps MCP Server now supports on-premises Azure DevOps Server using P
          "args": ["${input:ado_org}", "--authentication", "pat"],
          "env": {
            "AZURE_DEVOPS_PAT": "your-pat-token",
-           "SERVER_URL": "https://tfs.your-company.com"
+           "SERVER_URL": "https://tfs.your-company.com/tfs"
          }
        }
      }

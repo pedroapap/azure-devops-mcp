@@ -67,7 +67,7 @@ export const enabledDomains = domainsManager.getEnabledDomains();
 function getAzureDevOpsClient(getAzureDevOpsToken: () => Promise<string>, userAgentComposer: UserAgentComposer): () => Promise<WebApi> {
   return async () => {
     const accessToken = await getAzureDevOpsToken();
-    // For PAT authentication, use Basic auth handler; for OAuth tokens, use Bearer handler
+    // For PAT authentication, use Basic auth handler (Azure DevOps requires any non-empty username with the PAT as password)
     const authHandler = argv.authentication === "pat" ? getBasicHandler("PAT", accessToken) : getBearerHandler(accessToken);
     const connection = new WebApi(orgUrl, authHandler, undefined, {
       productName: "AzureDevOps.MCP",

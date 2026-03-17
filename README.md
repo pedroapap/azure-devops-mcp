@@ -13,12 +13,12 @@ This TypeScript project provides a **local** MCP server for Azure DevOps, enabli
 2. [🏆 Expectations](#-expectations)
 3. [⚙️ Supported Tools](#️-supported-tools)
 4. [🔌 Installation & Getting Started](#-installation--getting-started)
-5. [🏢 On-Premises Azure DevOps Server](#-on-premises-azure-devops-server)
-6. [🌏 Using Domains](#-using-domains)
-7. [📝 Troubleshooting](#-troubleshooting)
-8. [🎩 Examples & Best Practices](#-examples--best-practices)
-9. [🙋‍♀️ Frequently Asked Questions](#️-frequently-asked-questions)
-10. [📌 Contributing](#-contributing)
+5. [🌏 Using Domains](#-using-domains)
+6. [📝 Troubleshooting](#-troubleshooting)
+7. [🎩 Examples & Best Practices](#-examples--best-practices)
+8. [🙋‍♀️ Frequently Asked Questions](#️-frequently-asked-questions)
+9. [📌 Contributing](#-contributing)
+10. [🏢 On-Premises Azure DevOps Server](#-on-premises-azure-devops-server)
 11. [🔧 Fork Maintenance](#-fork-maintenance)
 
 ## 📺 Overview
@@ -132,30 +132,6 @@ Open GitHub Copilot Chat and try a prompt like `List ADO projects`. The first ti
 
 See the [getting started documentation](./docs/GETTINGSTARTED.md) to use our MCP Server with other tools such as Visual Studio 2022, Claude Code, and Cursor.
 
-## 🏢 On-Premises Azure DevOps Server
-
-The Azure DevOps MCP Server now supports on-premises Azure DevOps Server using Personal Access Tokens (PAT).
-
-### Quick Setup
-
-1. **Create a Personal Access Token** in your Azure DevOps Server
-2. **Configure your `mcp.json`** and add your PAT and SERVER_URL:
-   ```json
-   {
-     "servers": {
-       "ado-onprem": {
-         "type": "stdio",
-         "command": "mcp-server-azuredevops",
-         "args": ["${input:ado_org}", "--authentication", "pat"],
-         "env": {
-           "AZURE_DEVOPS_PAT": "your-pat-token",
-           "SERVER_URL": "https://azuredevops.contoso.com"
-         }
-       }
-     }
-   }
-   ```
-
 ## 🌏 Using Domains
 
 Azure DevOps exposes a large surface area. As a result, our Azure DevOps MCP Server includes many tools. To keep the toolset manageable, avoid confusing the model, and respect client limits on loaded tools, use Domains to load only the areas you need. Domains are named groups of related tools (for example: core, work, work-items, repositories, wiki). Add the `-d` argument and the domain names to the server args in your `mcp.json` to list the domains to enable.
@@ -218,6 +194,30 @@ See our [Contributions Guide](./CONTRIBUTING.md) for:
 
 This project follows the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
 For questions, see the [FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact [open@microsoft.com](mailto:open@microsoft.com).
+
+## 🏢 On-Premises Azure DevOps Server
+
+The Azure DevOps MCP Server now supports on-premises Azure DevOps Server using Personal Access Tokens (PAT).
+
+### Quick Setup
+
+1. **Create a Personal Access Token** in your Azure DevOps Server
+2. **Configure your `mcp.json`** and add your PAT and SERVER_URL:
+   ```json
+   {
+     "servers": {
+       "ado-onprem": {
+         "type": "stdio",
+         "command": "mcp-server-azuredevops",
+         "args": ["${input:ado_org}", "--authentication", "pat"],
+         "env": {
+           "AZURE_DEVOPS_PAT": "your-pat-token",
+           "SERVER_URL": "https://azuredevops.contoso.com"
+         }
+       }
+     }
+   }
+   ```
 
 ## 🔧 Fork Maintenance
 

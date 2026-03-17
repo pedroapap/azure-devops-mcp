@@ -1,6 +1,3 @@
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT License.
-
 import { jest } from "@jest/globals";
 import { AzureCliCredential, ChainedTokenCredential, DefaultAzureCredential } from "@azure/identity";
 import { PublicClientApplication } from "@azure/msal-node";

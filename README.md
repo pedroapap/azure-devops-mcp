@@ -140,6 +140,9 @@ The Azure DevOps MCP Server now supports on-premises Azure DevOps Server using P
 
 1. **Create a Personal Access Token** in your Azure DevOps Server
 2. **Configure your `mcp.json`** and add your PAT and SERVER_URL:
+
+   > ⚠️ **Security note:** Set `AZURE_DEVOPS_PAT` as a system/user environment variable rather than hardcoding it in `mcp.json`. Use a secure credential store supported by your operating system where possible.
+
    ```json
    {
      "servers": {
@@ -148,15 +151,13 @@ The Azure DevOps MCP Server now supports on-premises Azure DevOps Server using P
          "command": "mcp-server-azuredevops",
          "args": ["${input:ado_org}", "--authentication", "pat"],
          "env": {
-           "AZURE_DEVOPS_PAT": "your-pat-token",
+           "AZURE_DEVOPS_PAT": "<set-via-env-or-credential-store>",
            "SERVER_URL": "https://tfs.your-company.com/tfs"
          }
        }
      }
    }
    ```
-
-> ⚠️ **Security note:** Avoid hardcoding your PAT token directly in `mcp.json`. Instead, set `AZURE_DEVOPS_PAT` as a system/user environment variable or use a secure credential store supported by your operating system.
 
 ## 🌏 Using Domains
 

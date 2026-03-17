@@ -91,6 +91,7 @@ The general recovery flow is:
    ```
 
 > **Tip:** To skip a specific commit instead of resolving it:
+>
 > ```bash
 > git cherry-pick --skip
 > ```

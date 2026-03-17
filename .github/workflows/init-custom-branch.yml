@@ -1,4 +1,4 @@
-name: Create main-on-prem-support branch
+name: Apply fork-maintenance files to main-on-prem-support
 
 on:
   push:
@@ -6,28 +6,50 @@ on:
       - 'copilot/main-on-prem-support'
 
 jobs:
-  create-branch:
+  apply-to-custom-branch:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Create main-on-prem-support from main tip
+      - name: Checkout main-on-prem-support
+        uses: actions/checkout@v4
+        with:
+          ref: main-on-prem-support
+          fetch-depth: 0
+
+      - name: Ensure main-on-prem-support exists
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           REPO="${{ github.repository }}"
-
-          # Get main's current HEAD SHA
-          MAIN_SHA=$(gh api "repos/${REPO}/git/ref/heads/main" --jq '.object.sha')
-          echo "main HEAD: ${MAIN_SHA}"
-
-          # Create main-on-prem-support if it doesn't already exist
-          if gh api "repos/${REPO}/git/ref/heads/main-on-prem-support" --silent 2>/dev/null; then
-            echo "Branch main-on-prem-support already exists - nothing to do."
-          else
+          if ! gh api "repos/${REPO}/git/ref/heads/main-on-prem-support" --silent 2>/dev/null; then
+            MAIN_SHA=$(gh api "repos/${REPO}/git/ref/heads/main" --jq '.object.sha')
             gh api "repos/${REPO}/git/refs" \
               --method POST \
               -f ref='refs/heads/main-on-prem-support' \
               -f sha="${MAIN_SHA}"
-            echo "Created branch main-on-prem-support at ${MAIN_SHA}"
+            echo "Created main-on-prem-support at ${MAIN_SHA}"
+            git fetch origin main-on-prem-support
+            git checkout main-on-prem-support
+          fi
+
+      - name: Apply maintenance files from PR branch and commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Fetch the PR branch to access the latest maintenance files
+          git fetch origin copilot/main-on-prem-support
+
+          # Overlay only the maintenance files (preserves git file modes)
+          git checkout origin/copilot/main-on-prem-support \
+            -- scripts/sync-fork.sh docs/fork-sync.md README.md
+
+          # Commit only if something actually changed
+          if git diff --cached --quiet; then
+            echo "No changes to commit - maintenance files already up to date."
+          else
+            git commit -m "Add fork-maintenance files (sync-fork.sh, fork-sync.md, README.md)"
+            git push origin main-on-prem-support
+            echo "Maintenance files committed to main-on-prem-support."
           fi

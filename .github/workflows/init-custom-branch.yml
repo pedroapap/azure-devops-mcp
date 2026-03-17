@@ -1,4 +1,16 @@
-name: Apply fork-maintenance files to main-on-prem-support
+# init-custom-branch.yml
+#
+# Delivers fork-maintenance files authored on the copilot agent branch
+# (copilot/main-on-prem-support) to the durable custom branch
+# (main-on-prem-support).
+#
+# This workflow exists because the Copilot agent can only push to its own PR
+# branch.  Pushing to main-on-prem-support triggers sync-fork.yml which then
+# rebuilds main.
+#
+# See docs/fork-sync.md for the full fork-maintenance model.
+
+name: Deliver fork-maintenance files to main-on-prem-support
 
 on:
   push:
@@ -6,50 +18,76 @@ on:
       - 'copilot/main-on-prem-support'
 
 jobs:
-  apply-to-custom-branch:
+  deliver-maintenance-files:
+    name: Deliver maintenance files
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    steps:
-      - name: Checkout main-on-prem-support
-        uses: actions/checkout@v4
-        with:
-          ref: main-on-prem-support
-          fetch-depth: 0
 
-      - name: Ensure main-on-prem-support exists
+    steps:
+      - name: Create main-on-prem-support if it does not exist
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           REPO="${{ github.repository }}"
-          if ! gh api "repos/${REPO}/git/ref/heads/main-on-prem-support" --silent 2>/dev/null; then
+          if gh api "repos/${REPO}/git/ref/heads/main-on-prem-support" --silent 2>/dev/null; then
+            echo "Branch main-on-prem-support already exists."
+          else
             MAIN_SHA=$(gh api "repos/${REPO}/git/ref/heads/main" --jq '.object.sha')
             gh api "repos/${REPO}/git/refs" \
               --method POST \
               -f ref='refs/heads/main-on-prem-support' \
               -f sha="${MAIN_SHA}"
             echo "Created main-on-prem-support at ${MAIN_SHA}"
-            git fetch origin main-on-prem-support
-            git checkout main-on-prem-support
           fi
 
-      - name: Apply maintenance files from PR branch and commit
+      - name: Checkout main-on-prem-support
+        uses: actions/checkout@v4
+        with:
+          ref: main-on-prem-support
+          fetch-depth: 0
+
+      - name: Configure git identity
         run: |
-          git config user.name "github-actions[bot]"
+          git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Fetch the PR branch to access the latest maintenance files
+      - name: Overlay maintenance files from copilot branch
+        id: overlay
+        run: |
           git fetch origin copilot/main-on-prem-support
 
-          # Overlay only the maintenance files (preserves git file modes)
+          # Copy only the fork-maintenance files (preserves file modes)
           git checkout origin/copilot/main-on-prem-support \
             -- scripts/sync-fork.sh docs/fork-sync.md README.md
 
-          # Commit only if something actually changed
           if git diff --cached --quiet; then
-            echo "No changes to commit - maintenance files already up to date."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Maintenance files are already up to date – nothing to commit."
           else
-            git commit -m "Add fork-maintenance files (sync-fork.sh, fork-sync.md, README.md)"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git commit -m "chore: update fork-maintenance files"
             git push origin main-on-prem-support
-            echo "Maintenance files committed to main-on-prem-support."
+            echo "Maintenance files pushed to main-on-prem-support."
           fi
+
+      - name: Write job summary
+        if: always()
+        run: |
+          CHANGED="${{ steps.overlay.outputs.changed }}"
+          {
+            echo "## Fork-Maintenance File Delivery"
+            echo ""
+            if [ "$CHANGED" = "true" ]; then
+              echo "✅ Maintenance files updated on \`main-on-prem-support\`."
+              echo ""
+              echo "Files delivered:"
+              echo "- \`scripts/sync-fork.sh\`"
+              echo "- \`docs/fork-sync.md\`"
+              echo "- \`README.md\`"
+              echo ""
+              echo "The \`sync-fork.yml\` workflow will now rebuild \`main\`."
+            else
+              echo "ℹ️ Maintenance files were already up to date – no commit made."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

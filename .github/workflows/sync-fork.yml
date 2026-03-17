@@ -1,0 +1,148 @@
+# sync-fork.yml
+#
+# Rebuilds origin/main as upstream/main + commits from main-on-prem-support.
+#
+# Triggers:
+#   - workflow_dispatch  : manual run from the Actions tab (supports dry-run)
+#   - push               : automatically when main-on-prem-support is updated
+#
+# On conflict the job fails with exact recovery steps; resolve locally with
+# scripts/sync-fork.sh, then push manually.
+#
+# See docs/fork-sync.md for full documentation.
+
+name: Sync fork – rebuild main from upstream + main-on-prem-support
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview only – do not push main'
+        type: boolean
+        default: false
+  push:
+    branches:
+      - main-on-prem-support
+
+jobs:
+  rebuild-main:
+    name: Rebuild main
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Configure upstream remote (microsoft/azure-devops-mcp)
+        run: |
+          UPSTREAM_URL="https://github.com/microsoft/azure-devops-mcp.git"
+          if git remote get-url upstream &>/dev/null; then
+            git remote set-url upstream "$UPSTREAM_URL"
+            echo "Updated upstream remote → $UPSTREAM_URL"
+          else
+            git remote add upstream "$UPSTREAM_URL"
+            echo "Added upstream remote → $UPSTREAM_URL"
+          fi
+
+      - name: Fetch origin and upstream
+        run: |
+          git fetch origin   --prune
+          git fetch upstream --prune
+
+      - name: Rebuild main from upstream/main + main-on-prem-support
+        id: rebuild
+        run: |
+          set -euo pipefail
+
+          COMMITS=$(git rev-list --reverse "upstream/main..origin/main-on-prem-support")
+          COUNT=0
+          [ -n "$COMMITS" ] && COUNT=$(echo "$COMMITS" | wc -l | tr -d ' ')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
+          echo "Custom commits to apply: $COUNT"
+          git checkout -B main-rebuild upstream/main
+
+          if [ "$COUNT" -gt 0 ]; then
+            echo "Applying $COUNT commit(s) from main-on-prem-support:"
+            while IFS= read -r COMMIT; do
+              [ -z "$COMMIT" ] && continue
+              SUMMARY=$(git log --oneline -1 "$COMMIT")
+              echo "  + $SUMMARY"
+              git cherry-pick "$COMMIT" || {
+                echo ""
+                echo "::error::Conflict while applying: $SUMMARY"
+                echo ""
+                echo "Resolve the conflict locally using scripts/sync-fork.sh:"
+                echo "  1. Fix conflict markers in each file"
+                echo "  2. git add <resolved-files>"
+                echo "  3. git cherry-pick --continue"
+                echo "  4. git checkout main && git reset --hard main-rebuild"
+                echo "  5. git push origin main --force-with-lease"
+                exit 1
+              }
+            done <<< "$COMMITS"
+            echo "All $COUNT commit(s) applied successfully."
+          else
+            echo "No custom commits – main will match upstream/main exactly."
+          fi
+
+      - name: Push main to origin
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
+        run: |
+          git checkout -B main HEAD
+          git push origin main --force-with-lease
+          echo "origin/main → $(git rev-parse --short HEAD)"
+
+      - name: Dry-run preview (push skipped)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          echo "DRY RUN – push skipped."
+          echo ""
+          echo "main-rebuild HEAD: $(git rev-parse --short HEAD)"
+          echo ""
+          echo "Commits ahead of current origin/main:"
+          git log --oneline "origin/main..HEAD" 2>/dev/null || echo "  (none)"
+
+      - name: Write job summary
+        if: always()
+        run: |
+          UPSTREAM_SHA=$(git rev-parse --short upstream/main 2>/dev/null || echo "n/a")
+          REBUILT_SHA=$(git rev-parse --short HEAD      2>/dev/null || echo "n/a")
+          COUNT="${{ steps.rebuild.outputs.count }}"
+          COUNT="${COUNT:-0}"
+          IS_DRY="${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}"
+
+          {
+            echo "## Fork Sync Summary"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Upstream base (\`upstream/main\`) | \`${UPSTREAM_SHA}\` |"
+            echo "| Custom commits applied | ${COUNT} |"
+            echo "| Rebuilt HEAD | \`${REBUILT_SHA}\` |"
+            if [ "$IS_DRY" = "true" ]; then
+              echo "| Mode | Dry run – \`main\` **not** updated |"
+            else
+              echo "| Mode | Live – \`main\` pushed to origin |"
+            fi
+            echo ""
+            if [ "$COUNT" != "0" ]; then
+              echo "### Commits from \`main-on-prem-support\`"
+              echo '```'
+              git log --oneline "upstream/main..HEAD" 2>/dev/null || true
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up rebuild branch
+        if: always()
+        run: git branch -D main-rebuild 2>/dev/null || true

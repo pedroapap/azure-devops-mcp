@@ -7,7 +7,9 @@
 # Requirements:
 #   - Run from the root of a clone of this fork.
 #   - Working tree must be clean (no uncommitted changes).
-#   - SSH key for github.com must be available (used by the upstream remote).
+#   - SSH access to github.com is required for the upstream remote
+#     (git@github.com:microsoft/azure-devops-mcp.git). To use HTTPS instead,
+#     change UPSTREAM_URL on line 20 to the https:// URL and configure a token.
 #
 # See docs/fork-sync.md for full documentation.
 

@@ -1,0 +1,133 @@
+name: Sync Fork with Upstream
+
+# Rebuilds origin/main as upstream/main with commits from main-on-prem-support
+# cherry-picked on top, using patch-ID comparison so upstream-merged commits are
+# skipped automatically (see scripts/sync-fork.sh and docs/fork-sync.md).
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # Daily at 06:00 UTC
+  workflow_dispatch: # Also allow on-demand runs
+
+permissions:
+  contents: write # Required to force-push origin/main
+
+# Prevent concurrent runs: a new run cancels any in-progress run.
+concurrency:
+  group: sync-fork
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Rebuild main from upstream/main + main-on-prem-support
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository (full history)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0 # Full history required for cherry-pick
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote (HTTPS – no SSH key required)
+        run: |
+          git remote add upstream https://github.com/microsoft/azure-devops-mcp.git
+
+      - name: Fetch origin and upstream
+        run: |
+          git fetch origin --prune
+          git fetch upstream --prune
+
+      - name: Verify main-on-prem-support exists on origin
+        run: |
+          if ! git rev-parse --verify origin/main-on-prem-support >/dev/null 2>&1; then
+            echo "::error::Branch 'main-on-prem-support' not found on origin. Push it first."
+            exit 1
+          fi
+
+      - name: Rebuild main and push
+        run: |
+          set -euo pipefail
+
+          BRANCH_MAIN="main"
+          BRANCH_CUSTOM="main-on-prem-support"
+          UPSTREAM_MAIN="upstream/main"
+          CUSTOM_REF="origin/${BRANCH_CUSTOM}"
+          REBUILD_BRANCH="${BRANCH_MAIN}-rebuild"
+
+          # Compute custom commits not yet applied to upstream/main.
+          # git cherry uses patch-ID, so commits already merged upstream
+          # (same content, different SHA) are automatically excluded.
+          COMMITS=$(git cherry "$UPSTREAM_MAIN" "$CUSTOM_REF" | awk '/^\+/{print $2}')
+          COMMIT_COUNT=0
+          if [ -n "$COMMITS" ]; then
+            COMMIT_COUNT=$(echo "$COMMITS" | wc -l | tr -d ' ')
+          fi
+          echo "Custom commits to apply: ${COMMIT_COUNT}"
+
+          # Create a clean rebuild branch rooted at upstream/main.
+          git checkout -B "$REBUILD_BRANCH" "$UPSTREAM_MAIN"
+
+          # Cherry-pick each custom commit onto the rebuild branch.
+          if [ "$COMMIT_COUNT" -gt 0 ]; then
+            echo "Applying ${COMMIT_COUNT} custom commit(s) from ${BRANCH_CUSTOM}:"
+            while IFS= read -r COMMIT; do
+              SUMMARY=$(git log --oneline -1 "$COMMIT")
+              echo "  + ${SUMMARY}"
+              if ! git cherry-pick "$COMMIT"; then
+                CONFLICTED_FILES=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
+                echo ""
+                echo "::error::Cherry-pick conflict applying ${COMMIT} — conflicted file(s): ${CONFLICTED_FILES}"
+                echo "========================================================"
+                echo "  CONFLICT while applying:"
+                echo "    ${SUMMARY}"
+                echo ""
+                echo "  Conflicted file(s): ${CONFLICTED_FILES}"
+                echo "========================================================"
+                echo ""
+                echo "  To reproduce this conflict locally:"
+                echo ""
+                echo "    # 1. Clone your fork and fetch all remotes"
+                echo "    git clone ${{ github.server_url }}/${{ github.repository }}.git"
+                echo "    cd azure-devops-mcp"
+                echo "    git remote add upstream https://github.com/microsoft/azure-devops-mcp.git"
+                echo "    git fetch origin --prune"
+                echo "    git fetch upstream --prune"
+                echo ""
+                echo "    # 2. Create a clean rebuild branch rooted at upstream/main"
+                echo "    git checkout -B main-rebuild upstream/main"
+                echo ""
+                echo "    # 3. List custom commits not yet in upstream (patch-ID comparison)"
+                echo "    git cherry upstream/main origin/${BRANCH_CUSTOM}"
+                echo ""
+                echo "    # 4. Cherry-pick each '+' commit in order until you hit the conflict"
+                echo "    git cherry-pick ${COMMIT}"
+                echo "    # Observe the conflict in: ${CONFLICTED_FILES}"
+                echo ""
+                echo "  Information to capture when reporting this conflict:"
+                echo "    Branch:          ${BRANCH_CUSTOM}"
+                echo "    Commit SHA:      ${COMMIT}"
+                echo "    Commit summary:  ${SUMMARY}"
+                echo "    Conflicted file: ${CONFLICTED_FILES}"
+                echo ""
+                echo "  See docs/fork-sync.md § 'Reproducing a CI Conflict Locally' for full guidance."
+                exit 1
+              fi
+            done <<< "$COMMITS"
+          fi
+
+          # Reset main to the rebuilt HEAD and force-push to origin.
+          git checkout -B "$BRANCH_MAIN" HEAD
+          git push origin "$BRANCH_MAIN" --force-with-lease
+
+          # Clean up the temporary rebuild branch.
+          git branch -D "$REBUILD_BRANCH" 2>/dev/null || true
+
+          echo ""
+          echo "Done: '${BRANCH_MAIN}' = upstream/main + ${COMMIT_COUNT} custom commit(s)."

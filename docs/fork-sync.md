@@ -106,6 +106,73 @@ The script will:
    `--force-with-lease`.
 9. Delete the temporary `main-rebuild` branch.
 
+## Reproducing a CI Conflict Locally
+
+When the `sync-fork` workflow fails with a cherry-pick conflict, the Actions
+log prints a structured diagnostic block that contains everything you need to
+reproduce the exact state on your machine. Follow these steps:
+
+```bash
+# 1. Clone your fork and add the upstream remote
+git clone https://github.com/<username>/azure-devops-mcp.git
+cd azure-devops-mcp
+git remote add upstream https://github.com/microsoft/azure-devops-mcp.git
+
+# 2. Fetch both remotes to mirror the CI environment
+git fetch origin --prune
+git fetch upstream --prune
+
+# 3. Create a clean rebuild branch rooted at upstream/main
+git checkout -B main-rebuild upstream/main
+
+# 4. List the custom commits not yet applied to upstream (patch-ID comparison)
+#    Lines prefixed with '+' are the commits the workflow would cherry-pick.
+git cherry upstream/main origin/main-on-prem-support
+
+# 5. Cherry-pick each '+' commit in the listed order until you hit the conflict
+#    Replace <COMMIT_SHA> with the SHA printed in the workflow log.
+git cherry-pick <COMMIT_SHA>
+# The conflicted file(s) shown in the log will contain conflict markers.
+```
+
+### Information to capture when reporting a conflict
+
+Copy these values from the workflow log (they appear in the diagnostic block):
+
+| Field | Example |
+|---|---|
+| Branch | `main-on-prem-support` |
+| Commit SHA | `7a0d80b` |
+| Commit summary | `feat: add on-prem support …` |
+| Conflicted file(s) | `README.md` |
+
+### Resolving the conflict
+
+Once you have reproduced the conflict locally:
+
+1. Fix the conflict markers in each conflicted file.
+2. Stage the resolved files:
+   ```bash
+   git add <resolved-file> ...
+   ```
+3. Continue the cherry-pick sequence:
+   ```bash
+   git cherry-pick --continue
+   ```
+   Repeat steps 1–3 for each further conflicting commit.
+4. Once all cherry-picks finish, complete the sync:
+   ```bash
+   git checkout main
+   git reset --hard main-rebuild
+   git push origin main --force-with-lease
+   ```
+
+> **Tip:** To skip a specific commit instead of resolving it:
+>
+> ```bash
+> git cherry-pick --skip
+> ```
+
 ## Recovering from Conflicts
 
 If a cherry-pick conflict occurs, the script stops and prints exact next steps.

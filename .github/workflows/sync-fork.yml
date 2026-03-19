@@ -80,7 +80,45 @@ jobs:
             while IFS= read -r COMMIT; do
               SUMMARY=$(git log --oneline -1 "$COMMIT")
               echo "  + ${SUMMARY}"
-              git cherry-pick "$COMMIT"
+              if ! git cherry-pick "$COMMIT"; then
+                CONFLICTED_FILES=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
+                echo ""
+                echo "::error::Cherry-pick conflict applying ${COMMIT} — conflicted file(s): ${CONFLICTED_FILES}"
+                echo "========================================================"
+                echo "  CONFLICT while applying:"
+                echo "    ${SUMMARY}"
+                echo ""
+                echo "  Conflicted file(s): ${CONFLICTED_FILES}"
+                echo "========================================================"
+                echo ""
+                echo "  To reproduce this conflict locally:"
+                echo ""
+                echo "    # 1. Clone your fork and fetch all remotes"
+                echo "    git clone ${{ github.server_url }}/${{ github.repository }}.git"
+                echo "    cd azure-devops-mcp"
+                echo "    git remote add upstream https://github.com/microsoft/azure-devops-mcp.git"
+                echo "    git fetch origin --prune"
+                echo "    git fetch upstream --prune"
+                echo ""
+                echo "    # 2. Create a clean rebuild branch rooted at upstream/main"
+                echo "    git checkout -B main-rebuild upstream/main"
+                echo ""
+                echo "    # 3. List custom commits not yet in upstream (patch-ID comparison)"
+                echo "    git cherry upstream/main origin/${BRANCH_CUSTOM}"
+                echo ""
+                echo "    # 4. Cherry-pick each '+' commit in order until you hit the conflict"
+                echo "    git cherry-pick ${COMMIT}"
+                echo "    # Observe the conflict in: ${CONFLICTED_FILES}"
+                echo ""
+                echo "  Information to capture when reporting this conflict:"
+                echo "    Branch:          ${BRANCH_CUSTOM}"
+                echo "    Commit SHA:      ${COMMIT}"
+                echo "    Commit summary:  ${SUMMARY}"
+                echo "    Conflicted file: ${CONFLICTED_FILES}"
+                echo ""
+                echo "  See docs/fork-sync.md § 'Reproducing a CI Conflict Locally' for full guidance."
+                exit 1
+              fi
             done <<< "$COMMITS"
           fi
 

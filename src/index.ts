@@ -9,7 +9,7 @@ import { getBearerHandler, getPersonalAccessTokenHandler, WebApi } from "azure-d
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
-import { createAuthenticator } from "./auth.js";
+import { createAuthenticator, extractPatForHandler } from "./auth.js";
 import { logger } from "./logger.js";
 import { getOrgTenant } from "./org-tenants.js";
 //import { configurePrompts } from "./prompts.js";
@@ -45,7 +45,7 @@ const argv = yargs(hideBin(process.argv))
   })
   .option("authentication", {
     alias: "a",
-    describe: "Type of authentication to use",
+    describe: "Type of authentication to use. Supported values are 'interactive', 'azcli', 'env', 'envvar', and 'pat' (default: 'interactive')",
     type: "string",
     choices: ["interactive", "azcli", "env", "envvar", "pat"],
     default: defaultAuthenticationType,
@@ -59,7 +59,7 @@ const argv = yargs(hideBin(process.argv))
   .parseSync();
 
 export const orgName = argv.organization as string;
-const orgUrl = "https://dev.azure.com/" + orgName;
+const orgUrl = process.env.SERVER_URL ? `${process.env.SERVER_URL}/${orgName}` : `https://dev.azure.com/${orgName}`;
 
 const domainsManager = new DomainsManager(argv.domains);
 export const enabledDomains = domainsManager.getEnabledDomains();
@@ -67,9 +67,7 @@ export const enabledDomains = domainsManager.getEnabledDomains();
 function getAzureDevOpsClient(getAzureDevOpsToken: () => Promise<string>, userAgentComposer: UserAgentComposer, authType: string): () => Promise<WebApi> {
   return async () => {
     const accessToken = await getAzureDevOpsToken();
-    // For pat, accessToken is base64("{email}:{token}"). Decode to extract the token part,
-    // since getPersonalAccessTokenHandler prepends ":" internally and just needs the raw token.
-    const authHandler = authType === "pat" ? getPersonalAccessTokenHandler(Buffer.from(accessToken, "base64").toString("utf8").split(":").slice(1).join(":")) : getBearerHandler(accessToken);
+    const authHandler = authType === "pat" ? getPersonalAccessTokenHandler(extractPatForHandler(accessToken)) : getBearerHandler(accessToken);
     const connection = new WebApi(orgUrl, authHandler, undefined, {
       productName: "AzureDevOps.MCP",
       productVersion: packageVersion,

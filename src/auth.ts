@@ -75,6 +75,25 @@ class OAuthAuthenticator {
   }
 }
 
+function extractPatForHandler(accessToken: string): string {
+  const normalized = accessToken.trim();
+
+  // Accept both formats:
+  // 1) base64("email:pat")
+  // 2) raw PAT string
+  const decoded = Buffer.from(normalized, "base64").toString("utf8");
+  const roundTripMatches = Buffer.from(decoded, "utf8").toString("base64").replace(/=+$/, "") === normalized.replace(/=+$/, "");
+  const separatorIndex = decoded.indexOf(":");
+  const hasEmailAndPatShape = separatorIndex > 0 && separatorIndex < decoded.length - 1;
+  const isPrintableAscii = /^[\x20-\x7E]+$/.test(decoded);
+
+  if (roundTripMatches && hasEmailAndPatShape && isPrintableAscii) {
+    return decoded.slice(separatorIndex + 1);
+  }
+
+  return normalized;
+}
+
 function createAuthenticator(type: string, tenantId?: string): () => Promise<string> {
   logger.debug(`Creating authenticator of type '${type}' with tenantId='${tenantId ?? "undefined"}'`);
   switch (type) {
@@ -136,4 +155,4 @@ function createAuthenticator(type: string, tenantId?: string): () => Promise<str
       };
   }
 }
-export { createAuthenticator };
+export { createAuthenticator, extractPatForHandler };

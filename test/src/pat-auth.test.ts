@@ -28,7 +28,7 @@ jest.mock("@azure/msal-node", () => ({
 
 jest.mock("open", () => jest.fn());
 
-import { createAuthenticator, installPatFetchInterceptor } from "../../src/auth";
+import { createAuthenticator, extractPatForHandler, installPatFetchInterceptor } from "../../src/auth";
 
 describe("PAT authentication", () => {
   const originalEnv = process.env;
@@ -292,8 +292,7 @@ describe("PAT authentication", () => {
       const rawPat = "myRawPatToken123";
       const b64 = Buffer.from(`${email}:${rawPat}`).toString("base64");
 
-      const decoded = Buffer.from(b64, "base64").toString("utf8");
-      const extractedPat = decoded.split(":").slice(1).join(":");
+      const extractedPat = extractPatForHandler(b64);
 
       expect(extractedPat).toBe(rawPat);
     });
@@ -303,8 +302,15 @@ describe("PAT authentication", () => {
       const rawPat = "part1:part2:part3";
       const b64 = Buffer.from(`${email}:${rawPat}`).toString("base64");
 
-      const decoded = Buffer.from(b64, "base64").toString("utf8");
-      const extractedPat = decoded.split(":").slice(1).join(":");
+      const extractedPat = extractPatForHandler(b64);
+
+      expect(extractedPat).toBe(rawPat);
+    });
+
+    it("should keep a direct PAT unchanged", () => {
+      const rawPat = "myRawPatToken123";
+
+      const extractedPat = extractPatForHandler(rawPat);
 
       expect(extractedPat).toBe(rawPat);
     });

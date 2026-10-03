@@ -5262,6 +5262,20 @@ describe("repos tools", () => {
       expect(result.content[0].text).toBe(JSON.stringify(mockSearchResponse));
     });
 
+    it("should send commit search to the on-premises SERVER_URL when set", async () => {
+      process.env.SERVER_URL = "https://ado.contoso.com/tfs";
+      try {
+        const mockFetch = setupFetchMock(true, mockSearchResponse);
+        const handler = getHandler();
+
+        await handler({ searchText: "fix bug", skip: 0, top: 10, includeFacets: false });
+
+        expect(mockFetch.mock.calls[0][0]).toBe("https://ado.contoso.com/tfs/test-org/_apis/search/commitSearchResults?api-version=7.2-preview.1");
+      } finally {
+        delete process.env.SERVER_URL;
+      }
+    });
+
     it("should send projectName filter when project is provided as string", async () => {
       const mockFetch = setupFetchMock(true, mockSearchResponse);
       const handler = getHandler();

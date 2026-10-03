@@ -28,7 +28,7 @@ jest.mock("@azure/msal-node", () => ({
 
 jest.mock("open", () => jest.fn());
 
-import { createAuthenticator, installPatFetchInterceptor } from "../../src/auth";
+import { createAuthenticator, extractPatForHandler, installPatFetchInterceptor } from "../../src/auth";
 
 describe("PAT authentication", () => {
   const originalEnv = process.env;
@@ -80,6 +80,34 @@ describe("PAT authentication", () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ["https://ado.contoso.com/tfs", "https://ado.contoso.com/tfs/DefaultCollection/_apis/wit/$batch"],
+      ["http://ado.contoso.local:8080/tfs", "http://ado.contoso.local:8080/tfs/DefaultCollection/_apis/search/codesearchresults"],
+    ])("rewrites this PAT for the on-premises SERVER_URL %s", async (serverUrl, url) => {
+      process.env.SERVER_URL = serverUrl;
+      const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(new Response());
+      globalThis.fetch = fetchMock;
+      installPatFetchInterceptor(basicValue);
+
+      await fetch(url, { headers: { Authorization: `Bearer ${basicValue}` } });
+
+      const rewrittenInit = fetchMock.mock.calls[0][1];
+      expect(new Headers(rewrittenInit?.headers).get("Authorization")).toBe(`Basic ${basicValue}`);
+    });
+
+    it.each(["http://ado.contoso.com/tfs/DefaultCollection", "https://ado.contoso.com:8443/tfs/DefaultCollection", "https://other.contoso.com/tfs/DefaultCollection"])(
+      "refuses to send this PAT to %s when it does not match the on-premises SERVER_URL origin",
+      async (url) => {
+        process.env.SERVER_URL = "https://ado.contoso.com/tfs";
+        const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(new Response());
+        globalThis.fetch = fetchMock;
+        installPatFetchInterceptor(basicValue);
+
+        await expect(fetch(url, { headers: { Authorization: `Bearer ${basicValue}` } })).rejects.toThrow("Refusing to send a Personal Access Token to untrusted destination");
+        expect(fetchMock).not.toHaveBeenCalled();
+      }
+    );
+
     it("does not replace an unrelated bearer token", async () => {
       const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(new Response());
       globalThis.fetch = fetchMock;
@@ -98,6 +126,18 @@ describe("PAT authentication", () => {
       await fetch("https://example.com/path");
 
       expect(fetchMock).toHaveBeenCalledWith("https://example.com/path", undefined);
+    });
+
+    it("base64-encodes a raw PAT for the Basic header", async () => {
+      const rawPat = "myrawpatvalue1234567890";
+      const fetchMock = jest.fn<typeof fetch>().mockResolvedValue(new Response());
+      globalThis.fetch = fetchMock;
+      installPatFetchInterceptor(rawPat);
+
+      await fetch("https://dev.azure.com/org", { headers: { Authorization: `Bearer ${rawPat}` } });
+
+      const rewrittenInit = fetchMock.mock.calls[0][1];
+      expect(new Headers(rewrittenInit?.headers).get("Authorization")).toBe(`Basic ${Buffer.from(`:${rawPat}`).toString("base64")}`);
     });
 
     it("rewrites headers supplied by a Request object", async () => {
@@ -292,8 +332,7 @@ describe("PAT authentication", () => {
       const rawPat = "myRawPatToken123";
       const b64 = Buffer.from(`${email}:${rawPat}`).toString("base64");
 
-      const decoded = Buffer.from(b64, "base64").toString("utf8");
-      const extractedPat = decoded.split(":").slice(1).join(":");
+      const extractedPat = extractPatForHandler(b64);
 
       expect(extractedPat).toBe(rawPat);
     });
@@ -303,8 +342,15 @@ describe("PAT authentication", () => {
       const rawPat = "part1:part2:part3";
       const b64 = Buffer.from(`${email}:${rawPat}`).toString("base64");
 
-      const decoded = Buffer.from(b64, "base64").toString("utf8");
-      const extractedPat = decoded.split(":").slice(1).join(":");
+      const extractedPat = extractPatForHandler(b64);
+
+      expect(extractedPat).toBe(rawPat);
+    });
+
+    it("should keep a direct PAT unchanged", () => {
+      const rawPat = "myRawPatToken123";
+
+      const extractedPat = extractPatForHandler(rawPat);
 
       expect(extractedPat).toBe(rawPat);
     });

@@ -13,6 +13,7 @@ import { batchApiVersion, markdownCommentsApiVersion, getEnumKeys, safeEnumConve
 import { elicitProject, elicitTeam } from "../shared/elicitations.js";
 import { createExternalContentResponse } from "../shared/content-safety.js";
 import { getUserIdentityFromEmail } from "./auth.js";
+import { getMarkdownFieldsUnsupportedError } from "../server-url.js";
 
 const WORKITEM_TOOLS = {
   wit_work_item: "wit_work_item",
@@ -734,6 +735,8 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
         if (action === "create") {
           if (!workItemType) return { content: [{ type: "text", text: "workItemType is required for create" }], isError: true };
           if (!fields || fields.length === 0) return { content: [{ type: "text", text: "fields is required for create" }], isError: true };
+          const markdownError = getMarkdownFieldsUnsupportedError(fields.map((field) => field.format));
+          if (markdownError) return { content: [{ type: "text", text: markdownError }], isError: true };
           if (!resolvedProject) {
             const result = await elicitProject(server, connection, "Select the Azure DevOps project to create the work item in.");
             if ("response" in result) return result.response;
@@ -783,6 +786,8 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
 
         if (action === "update_batch") {
           if (!batchUpdates || batchUpdates.length === 0) return { content: [{ type: "text", text: "batchUpdates is required for update_batch" }], isError: true };
+          const markdownError = getMarkdownFieldsUnsupportedError(batchUpdates.map((update) => update.format));
+          if (markdownError) return { content: [{ type: "text", text: markdownError }], isError: true };
 
           const orgUrl = connection.serverUrl;
           const accessToken = await tokenProvider();
@@ -836,6 +841,8 @@ function configureWorkItemTools(server: McpServer, tokenProvider: () => Promise<
           if (!parentId) return { content: [{ type: "text", text: "parentId is required for add_child" }], isError: true };
           if (!workItemType) return { content: [{ type: "text", text: "workItemType is required for add_child" }], isError: true };
           if (!items || items.length === 0) return { content: [{ type: "text", text: "items is required for add_child" }], isError: true };
+          const markdownError = getMarkdownFieldsUnsupportedError(items.map((item) => item.format));
+          if (markdownError) return { content: [{ type: "text", text: markdownError }], isError: true };
           if (!resolvedProject) {
             const result = await elicitProject(server, connection, "Select the Azure DevOps project to create child work items in.");
             if ("response" in result) return result.response;

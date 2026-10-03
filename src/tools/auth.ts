@@ -3,6 +3,7 @@
 
 import { WebApi } from "azure-devops-node-api";
 import { apiVersion } from "../utils.js";
+import { getServerUrl } from "../server-url.js";
 import { IdentityBase } from "azure-devops-node-api/interfaces/IdentitiesInterfaces.js";
 
 interface IdentitiesResponse {
@@ -34,8 +35,8 @@ async function getCurrentUserDetails(tokenProvider: () => Promise<string>, conne
 async function searchIdentities(identity: string, tokenProvider: () => Promise<string>, connectionProvider: () => Promise<WebApi>, userAgentProvider: () => string): Promise<IdentitiesResponse> {
   const token = await tokenProvider();
   const connection = await connectionProvider();
-  const orgName = connection.serverUrl.split("/")[3];
-  const baseUrl = `https://vssps.dev.azure.com/${orgName}/_apis/identities`;
+  // On-premises servers host Identities at the collection URL; the cloud uses vssps.dev.azure.com.
+  const baseUrl = getServerUrl() ? `${connection.serverUrl}/_apis/identities` : `https://vssps.dev.azure.com/${connection.serverUrl.split("/")[3]}/_apis/identities`;
 
   const params = new URLSearchParams({
     "api-version": apiVersion,

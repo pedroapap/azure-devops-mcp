@@ -147,6 +147,23 @@ describe("auth functions", () => {
       await expect(searchIdentities("test@example.com", tokenProvider, connectionProvider, userAgentProvider)).rejects.toThrow("Network timeout");
     });
 
+    it("should search identities on the on-premises collection when SERVER_URL is set", async () => {
+      process.env.SERVER_URL = "https://ado.contoso.com/tfs";
+      try {
+        (tokenProvider as jest.Mock).mockResolvedValue("fake-token");
+        connectionProvider.mockResolvedValue({ serverUrl: "https://ado.contoso.com/tfs/DefaultCollection" } as WebApi);
+        (global.fetch as jest.Mock).mockResolvedValue({ ok: true, json: jest.fn().mockResolvedValue({ value: [] }) });
+
+        await searchIdentities("john.doe@example.com", tokenProvider, connectionProvider, userAgentProvider);
+
+        expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(
+          "https://ado.contoso.com/tfs/DefaultCollection/_apis/identities?api-version=7.2-preview.1&searchFilter=General&filterValue=john.doe%40example.com"
+        );
+      } finally {
+        delete process.env.SERVER_URL;
+      }
+    });
+
     it("should properly encode search filter in URL", async () => {
       (tokenProvider as jest.Mock).mockResolvedValue("fake-token");
 

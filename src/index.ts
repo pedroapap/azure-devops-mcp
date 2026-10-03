@@ -8,9 +8,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { getBearerHandler, getPersonalAccessTokenHandler, WebApi } from "azure-devops-node-api";
 import yargs from "yargs";
 
-import { createAuthenticator, installPatFetchInterceptor } from "./auth.js";
+import { createAuthenticator, extractPatForHandler, installPatFetchInterceptor } from "./auth.js";
 import { logger } from "./logger.js";
 import { getOrgTenant } from "./org-tenants.js";
+import { getOrgUrl, getServerUrl } from "./server-url.js";
 //import { configurePrompts } from "./prompts.js";
 import { configureAllTools } from "./tools.js";
 import { UserAgentComposer } from "./useragent.js";
@@ -45,7 +46,7 @@ const argv = yargs(getCliArgs())
   })
   .option("authentication", {
     alias: "a",
-    describe: "Type of authentication to use",
+    describe: "Type of authentication to use. Supported values are 'interactive', 'azcli', 'env', 'envvar', and 'pat' (default: 'interactive')",
     type: "string",
     choices: ["interactive", "azcli", "env", "envvar", "pat"],
     default: defaultAuthenticationType,
@@ -59,7 +60,7 @@ const argv = yargs(getCliArgs())
   .parseSync();
 
 export const orgName = argv.organization as string;
-const orgUrl = "https://dev.azure.com/" + orgName;
+const orgUrl = getOrgUrl(orgName);
 
 const domainsManager = new DomainsManager(argv.domains);
 export const enabledDomains = domainsManager.getEnabledDomains();
@@ -67,9 +68,7 @@ export const enabledDomains = domainsManager.getEnabledDomains();
 function getAzureDevOpsClient(getAzureDevOpsToken: () => Promise<string>, userAgentComposer: UserAgentComposer, authType: string): () => Promise<WebApi> {
   return async () => {
     const accessToken = await getAzureDevOpsToken();
-    // For pat, accessToken is base64("{email}:{token}"). Decode to extract the token part,
-    // since getPersonalAccessTokenHandler prepends ":" internally and just needs the raw token.
-    const authHandler = authType === "pat" ? getPersonalAccessTokenHandler(Buffer.from(accessToken, "base64").toString("utf8").split(":").slice(1).join(":")) : getBearerHandler(accessToken);
+    const authHandler = authType === "pat" ? getPersonalAccessTokenHandler(extractPatForHandler(accessToken)) : getBearerHandler(accessToken);
     const connection = new WebApi(orgUrl, authHandler, undefined, {
       productName: "AzureDevOps.MCP",
       productVersion: packageVersion,
@@ -105,7 +104,8 @@ async function main() {
   server.server.oninitialized = () => {
     userAgentComposer.appendMcpClientInfo(server.server.getClientVersion());
   };
-  const tenantId = argv.tenant ?? (await getOrgTenant(orgName));
+  // Tenant discovery only applies to Azure DevOps Services; skip it for an on-premises SERVER_URL.
+  const tenantId = argv.tenant ?? (getServerUrl() ? undefined : await getOrgTenant(orgName));
   const authenticator = createAuthenticator(argv.authentication, tenantId);
 
   if (argv.authentication === "pat") {

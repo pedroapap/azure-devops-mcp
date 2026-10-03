@@ -8,6 +8,7 @@ import { GitItem, VersionControlRecursionType } from "azure-devops-node-api/inte
 import { z } from "zod";
 import { apiVersion } from "../utils.js";
 import { orgName } from "../index.js";
+import { getSearchBaseUrl } from "../server-url.js";
 import { createExternalContentResponse } from "../shared/content-safety.js";
 
 const SEARCH_TOOLS = {
@@ -36,7 +37,7 @@ function configureSearchTools(server: McpServer, tokenProvider: () => Promise<st
     async ({ searchText, project, repository, path, branch, includeFacets, skip, top }) => {
       const accessToken = await tokenProvider();
       const connection = await connectionProvider();
-      const url = `https://almsearch.dev.azure.com/${orgName}/_apis/search/codesearchresults?api-version=${apiVersion}`;
+      const url = `${getSearchBaseUrl(orgName)}/_apis/search/codesearchresults?api-version=${apiVersion}`;
 
       const requestBody: Record<string, unknown> = {
         searchText,
@@ -92,7 +93,7 @@ function configureSearchTools(server: McpServer, tokenProvider: () => Promise<st
     },
     async ({ searchText, project, wiki, includeFacets, skip, top }) => {
       const accessToken = await tokenProvider();
-      const url = `https://almsearch.dev.azure.com/${orgName}/_apis/search/wikisearchresults?api-version=${apiVersion}`;
+      const url = `${getSearchBaseUrl(orgName)}/_apis/search/wikisearchresults?api-version=${apiVersion}`;
 
       const requestBody: Record<string, unknown> = {
         searchText,
@@ -144,7 +145,7 @@ function configureSearchTools(server: McpServer, tokenProvider: () => Promise<st
     },
     async ({ searchText, project, areaPath, workItemType, state, assignedTo, includeFacets, skip, top }) => {
       const accessToken = await tokenProvider();
-      const url = `https://almsearch.dev.azure.com/${orgName}/_apis/search/workitemsearchresults?api-version=${apiVersion}`;
+      const url = `${getSearchBaseUrl(orgName)}/_apis/search/workitemsearchresults?api-version=${apiVersion}`;
 
       const requestBody: Record<string, unknown> = {
         searchText,

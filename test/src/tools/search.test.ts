@@ -295,6 +295,19 @@ describe("search tools content spotlighting", () => {
     expect(result.content[0].text).not.toBe(payload);
   });
 
+  it("sends search requests to the on-premises SERVER_URL when set", async () => {
+    process.env.SERVER_URL = "https://ado.contoso.com/tfs";
+    try {
+      const fetchMock = mockSuccessfulResponse(JSON.stringify({ results: [] }));
+
+      await getHandler(SEARCH_TOOLS.search_workitem)({ searchText: "security", includeFacets: false, skip: 0, top: 10 });
+
+      expect(fetchMock.mock.calls[0][0]).toMatch(/^https:\/\/ado\.contoso\.com\/tfs\/[^/]+\/_apis\/search\/workitemsearchresults\?/);
+    } finally {
+      delete process.env.SERVER_URL;
+    }
+  });
+
   it("sends work item search filters", async () => {
     const fetchMock = mockSuccessfulResponse(JSON.stringify({ results: [] }));
 

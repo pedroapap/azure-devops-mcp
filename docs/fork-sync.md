@@ -41,6 +41,76 @@ When `SERVER_URL` is set:
   `SERVER_URL`, so the PAT is never sent anywhere else.
 - Tenant discovery (a cloud-only lookup) is skipped.
 
+### On-Premises Limitations
+
+- **Internal certificate authority**: Node.js does not use the operating
+  system's certificate store by default. If the server certificate is issued by
+  an internal CA, start the server with `NODE_OPTIONS=--use-system-ca` (Node.js
+  22.15+/23.8+) or point `NODE_EXTRA_CA_CERTS` at the CA's PEM file. Otherwise
+  every call fails with `unable to verify the first certificate`.
+- **Markdown work item fields**: Azure DevOps Server does not support Markdown
+  for work item fields, so `wit_work_item_write` rejects `format: "Markdown"`
+  (`create`, `update_batch`, `add_child`) with an explicit error. Send HTML
+  content with `format: "Html"`, and pass it explicitly for `add_child`, which
+  defaults to Markdown. Work item comments support Markdown.
+- **Cloud-only features**: Advanced Security (`advsec_*`) and commit search
+  (`repo_search_commits`) are not available on Azure DevOps Server. Code, wiki
+  and work item search need the Search extension installed on the collection.
+
+### Testing Against a Real Server
+
+Two scripts run the compiled server (`dist/index.js`) over stdio and call the
+tools against a real server. Build first with `npm run build`. Both scripts
+accept a raw PAT or base64 `"<email>:<pat>"`.
+
+**Read-only smoke test** (`scripts/smoke-test.mjs`). Safe for any project: it
+only reads, and discovers projects, repos, builds and work items as it goes.
+Tools without data to work on are reported as `SKIP`.
+
+```bash
+NODE_OPTIONS=--use-system-ca \
+SERVER_URL=https://azuredevops.contoso.com \
+PERSONAL_ACCESS_TOKEN=<pat> \
+  node scripts/smoke-test.mjs <collection> --project <project> [--only <toolPrefix>]
+```
+
+**Sandbox end-to-end test** (`scripts/e2e-sandbox.mjs`). Use only on a
+disposable project. It creates its own data inside the project (repo, commits,
+branch, pull request, work items, iteration, team capacity, code wiki, test
+plan, YAML pipeline and runs), calls every tool and action against that data,
+checks each response, and deletes everything it created at the end. All
+created items are named `mcp-smoke-<timestamp>`. Nothing is changed at
+collection level.
+
+```bash
+NODE_OPTIONS=--use-system-ca \
+SERVER_URL=https://azuredevops.contoso.com \
+PERSONAL_ACCESS_TOKEN=<pat> \
+SMOKE_POOL=<agent pool available to the project> \
+  node scripts/e2e-sandbox.mjs <collection> <project> [--keep] [--only <toolPrefix>]
+```
+
+| Option                   | Purpose                                                                           |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| `--keep`                 | Leave the created data in place for inspection (no cleanup).                      |
+| `--only <prefix>`        | Only call tools whose name starts with the prefix, e.g. `wit_`.                   |
+| `SMOKE_TEAM`             | Team to use (default `<project> Team`).                                           |
+| `SMOKE_POOL`             | Agent pool for the test pipeline (default `Default`); it must have online agents. |
+| `SMOKE_PIPELINE_TIMEOUT` | Seconds to wait for the pipeline run (default 900).                               |
+| `SMOKE_SEARCH_TEXT`      | Text for code search (default `Hello`).                                           |
+| `SMOKE_OUT`              | Directory for results (default: the OS temp directory).                           |
+
+Each call is reported as `PASS`, `FAIL`, `WARN` (call succeeded but the check
+was inconclusive, e.g. the search index has not caught up), `XFAIL` (known not
+to work on Azure DevOps Server) or `SKIP`. The script exits with code 1 if
+anything failed. The output directory has `report.json` with every request and
+response, and `server.log` with the server's debug log (including every URL it
+called).
+
+Deleted work items and repositories go to the project recycle bin. Azure
+DevOps Server automatically creates a `<repo> CI` pipeline when a repository
+with `azure-pipelines.yml` is pushed; cleanup removes it too.
+
 Keep these on-premises changes in `main-on-prem-support` so they survive each
 upstream sync.
 

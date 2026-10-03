@@ -4,17 +4,25 @@
 import { AzureCliCredential, ChainedTokenCredential, DefaultAzureCredential, TokenCredential } from "@azure/identity";
 import { logger } from "./logger.js";
 import { azureDevOpsScopes, OAuthAuthenticator } from "./oauth.js";
+import { getServerOrigin } from "./server-url.js";
 
 const patAllowedHosts = new Set(["dev.azure.com", "vssps.dev.azure.com", "almsearch.dev.azure.com"]);
 
-function isPatAllowedHost(hostname: string): boolean {
-  const normalizedHostname = hostname.toLowerCase();
-  return patAllowedHosts.has(normalizedHostname) || normalizedHostname.endsWith(".visualstudio.com");
+function isPatAllowedUrl(url: URL): boolean {
+  // An on-premises SERVER_URL is explicitly configured, so its exact origin (including http) is trusted.
+  if (url.origin === getServerOrigin()) {
+    return true;
+  }
+  const normalizedHostname = url.hostname.toLowerCase();
+  return url.protocol === "https:" && (patAllowedHosts.has(normalizedHostname) || normalizedHostname.endsWith(".visualstudio.com"));
 }
 
-function installPatFetchInterceptor(basicValue: string): void {
+function installPatFetchInterceptor(patValue: string): void {
   const originalFetch = globalThis.fetch;
-  const patBearerValue = `Bearer ${basicValue}`;
+  const patBearerValue = `Bearer ${patValue}`;
+  // PERSONAL_ACCESS_TOKEN is either base64("email:pat") or a raw PAT; Basic auth needs the base64 form.
+  const pat = extractPatForHandler(patValue);
+  const basicValue = pat === patValue.trim() ? Buffer.from(`:${pat}`).toString("base64") : patValue.trim();
 
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
@@ -23,7 +31,7 @@ function installPatFetchInterceptor(basicValue: string): void {
     }
 
     const requestUrl = new URL(input instanceof Request ? input.url : input.toString());
-    if (requestUrl.protocol !== "https:" || !isPatAllowedHost(requestUrl.hostname)) {
+    if (!isPatAllowedUrl(requestUrl)) {
       throw new Error(`Refusing to send a Personal Access Token to untrusted destination '${requestUrl.origin}'`);
     }
 
@@ -33,6 +41,25 @@ function installPatFetchInterceptor(basicValue: string): void {
     }
     return originalFetch(input, { ...init, headers });
   };
+}
+
+function extractPatForHandler(accessToken: string): string {
+  const normalized = accessToken.trim();
+
+  // Accept both formats:
+  // 1) base64("email:pat")
+  // 2) raw PAT string
+  const decoded = Buffer.from(normalized, "base64").toString("utf8");
+  const roundTripMatches = Buffer.from(decoded, "utf8").toString("base64").replace(/=+$/, "") === normalized.replace(/=+$/, "");
+  const separatorIndex = decoded.indexOf(":");
+  const hasEmailAndPatShape = separatorIndex > 0 && separatorIndex < decoded.length - 1;
+  const isPrintableAscii = /^[\x20-\x7E]+$/.test(decoded);
+
+  if (roundTripMatches && hasEmailAndPatShape && isPrintableAscii) {
+    return decoded.slice(separatorIndex + 1);
+  }
+
+  return normalized;
 }
 
 function createAuthenticator(type: string, tenantId?: string): () => Promise<string> {
@@ -96,4 +123,4 @@ function createAuthenticator(type: string, tenantId?: string): () => Promise<str
       };
   }
 }
-export { createAuthenticator, installPatFetchInterceptor };
+export { createAuthenticator, extractPatForHandler, installPatFetchInterceptor };
